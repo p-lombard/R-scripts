@@ -1,0 +1,495 @@
+---
+title: "GeneSetEnrichment"
+author: "Phoebe"
+date: "`r Sys.Date()`" 
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__56_A1" #Need to reverse slashes when copied in Windows
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/50D" #Need to reverse slashes when copied in Windows
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/16_1" #Need to reverse slashes when copied in Windows
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/45B"
+directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/47"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/A1 - 15A"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/B1(missing currently) - 19"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/C1 - 33B"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/D1_-_35"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__60_B1"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__61_C1"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__63_D1"
+
+sample_name <- substr(directory_10X, 67, nchar(directory_10X))
+#sample_name="50D"
+subdir='SPATA2_figures'
+sig_trajectory_subdir='signature_trajectories'
+custom_fig_subdir='custom_figures'
+
+knitr::opts_knit$set(root.dir = file.path(directory_10X, subdir))
+```
+### March 22, 2023
+# Load a SPATA object and subset spata object (spata_obj2) from the SPATA2_Test R file
+- spata_obj2 should be subset to include spots from scanpy QC and leiden clusters also from scanpy workflow.
+
+```{r declareConstants, message = FALSE}
+library(SPATA2)
+library(magrittr)
+library(tidyverse)
+library(monocle3)
+library(viridisLite)
+library(msigdbr)
+library(clusterProfiler)
+
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__56_A1" #Need to reverse slashes when copied in Windows
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/50D" #Need to reverse slashes when copied in Windows
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/16_1" #Need to reverse slashes when copied in Windows
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/45B"
+directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/47"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/A1 - 15A"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/B1(missing currently) - 19"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/C1 - 33B"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/D1_-_35"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__60_B1"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__61_C1"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__63_D1"
+
+sample_name <- substr(directory_10X, 67, nchar(directory_10X))
+#sample_name="50D"
+subdir='SPATA2_figures'
+sig_trajectory_subdir='signature_trajectories'
+custom_fig_subdir='custom_figures'
+directory_genesets="C:/Users/mzaidi/Documents/Visium Datasets/Gene signatures/all_SPATA2_external.csv"
+external_geneset=read.csv(directory_genesets)
+#Remove empty columns from external_geneset
+empty_columns <- colSums(is.na(external_geneset) | external_geneset == "") == nrow(external_geneset)
+external_geneset=external_geneset[, !empty_columns]
+
+#create output directory
+dir.create(file.path(directory_10X, subdir), showWarnings = FALSE) #create base figure directory
+setwd(file.path(directory_10X, subdir))
+dir.create(sig_trajectory_subdir, showWarnings = FALSE) #create subdirectory for iterative sig plotting
+dir.create(custom_fig_subdir, showWarnings = FALSE) #create subdirectory for iterative sig plotting
+# Create directory to read/write spata objects
+spata_obj_dir=paste(getwd(),"spata_obj.RDS",sep="/")
+spata_obj_dir2=paste(getwd(),"spata_obj2.RDS",sep="/")
+
+spata_obj <- loadSpataObject(spata_obj_dir, verbose = TRUE, update = TRUE)
+#adjust directory instructions
+spata_obj <-
+  adjustDirectoryInstructions(
+    object = spata_obj,
+    to = "spata_object",
+    directory_new = spata_obj_dir, # the directory under which to store the object
+  )
+spata_obj@used_genesets <-
+     dplyr::filter(spata_obj@used_genesets,
+                   !ont %in% "external_RonNeftel.MESUnique")
+```
+These are the colours we use for the leiden clusters because I think they're pretty. Also, they're the same ones from Python, so your figures should match :) SPATA2 surface plot functions do NOT like these colours for some reason they want your clrp params to be character values from the ugly-ass colours that they choose to display clusters in. You have to use `clrp_adjust = leiden_gene_colors` as a param in plotting functions if you want it to work. 
+
+```{r colours}
+leiden_gene_colors = c("0"='#1f77b4',
+                       "1"='#ff7f0e',
+                       "2"='#279e68',
+                       "3"='#d62728',
+                       "4"='#aa40fc',
+                       "5"='#8c564b',
+                       "6"= '#e377c2',
+                       "7"='#b5bd61',
+                       "8"= '#17becf',
+                       "9"= '#aec7e8',
+                       "10"='#ffbb78',
+                       "11"='#98df8a'
+)
+```
+# subset the original SPATA object to include spots from scanpy QC and leiden clusters (also from scanpy)
+SPATA2 has clustering and QC functions you can use as well but we want to make sure we're using the same clusters for all analysis. 
+1. Load in a csv file that contains the spot bar codes and their assigned clusters (obsClusters is the csv which is saved as leiden_genedf)
+2. Remove any empty columns from the datafrane
+3. Rename the barcodes column so that it is called "barcodes" and turn the cluster assignments into characters (need to work on a better way of figuring this out)
+4. Subset spata_obj using the spata function subsetByBarcodes() to create spata_obj2
+5. Add features using spata addFeatures() function to add "leiden_gene" (the leiden cluster assignments) as a feature of our spata object dataset.
+```{r subset, message=FALSE}
+#load
+pythonObsClusters=paste(directory_10X,"/outs/obsClusters.csv",sep='')
+leiden_genedf=read.csv(pythonObsClusters)
+#Remove empty columns from external_geneset
+empty_columns <- colSums(is.na(leiden_genedf) | leiden_genedf == "") == nrow(leiden_genedf)
+leiden_genedf=leiden_genedf[, !empty_columns]
+
+# Rename barcodes column
+names(leiden_genedf)[names(leiden_genedf) == "X"] <- "barcodes"
+leiden_genedf$leiden_gene <- as.character(leiden_genedf$leiden_gene)
+
+#subset the spata object to include only spots included after scanpy preprocessing
+scanpy_barcodes <- leiden_genedf$barcodes
+spata_obj2 <- subsetByBarcodes_CountMtr(
+  spata_obj,
+  scanpy_barcodes
+)
+
+spata_obj2 <-
+  addFeatures(object = spata_obj2,
+              feature_names = c("leiden_gene"),
+              feature_df = leiden_genedf,
+              overwrite = TRUE,
+              key = "barcodes")
+```
+## or, if you've already made spata_obj2, you can just load it in
+```{r loadSpata_obj2, message = FALSE}
+spata_obj2 <- loadSpataObject(spata_obj_dir2, verbose = TRUE, update = TRUE)
+```
+# create a surface plot to visualize leiden clusters in spatial coordinates
+```{r,Leiden Clusters Surface Plot, message = FALSE}
+plotSurface(object = spata_obj2, 
+          color_by = "leiden_gene",
+          display_image = TRUE,
+          clrp_adjust = leiden_gene_colors, 
+          pt_size = 1.8) +
+  ggplot2::labs(title = "Scanpy leiden clusters", color = "Scanpy Leiden")
+ggplot2::ggsave('scanpy_leiden.png')
+```
+## Differential Gene Expression Analysis
+This is SPATA2's built in differential gene expression analysis workflow. We need DE analysis in order to run spata2's gsea next. Could import scanpy DE, but it is way easier to just run spata2 version than figure out how to transfer this kind of thing from Python workflow to R. 
+- we use the wilcoxon test when running differential expression analysis. 
+- prints an overview of the analysis. 
+- save the results to a dataframe (DeaDf) for future use and save that dataframe as a csv file. 
+```{r,DE analysis,message = FALSE}
+spata_obj2 <-
+  runDeAnalysis(object = spata_obj2,
+                across = "leiden_gene", # across which identity groups
+                method_de = c("wilcox") # with which methods
+  )
+
+# get an overview about the de-analysis results stored in your object
+print("OVERVIEW OF DEA")
+printDeaOverview(spata_obj2)
+```
+
+```{r,get dea dataframe, message = FALSE}
+
+DeaDf <- getDeaResultsDf(object = spata_obj2, 
+                across = "leiden_gene", 
+                method_de = "wilcox",
+                max_adj_pval = 0.025)
+write.csv(DeaDf, paste(directory_10X,"\\",subdir,"\\DeaDf.csv",sep=""),row.names = FALSE)
+```
+## SPATA2 Gene Set Enrichment Analysis
+this is NOT proper gene set enrichment analysis. it is just gene set enrichment. the differentially expressed genes of each cluster are given to [hypeR](https://montilab.github.io/hypeR-docs/) as a character vector of symbols for hypergeometric testing. the authors don't even use this in their own paper. they use [clusterProfiler](http://yulab-smu.top/biomedical-knowledge-mining-book/clusterprofiler-go.html) `enrichGO` and `enricher` functions (which are also just hypergeometric enrichment, but figuring out actual gsea is going to have to be its own thing I suppose). 
+
+# 1. To select genesets that you want to look at:
+Set `gene_set_names` parameter in the `runGSEA()` function. `gene_set_names` is a **character vector of gene set names** that are taken from the object's gene set data.frame. We need to give it a character vector where each value is the name of a geneset. `hypeR` can take msigdb genesets but apparently those can't pass to the SPATA2 function, so we'll deal with them later. 
+
+This means we need to use SPATA2 `getGeneSetDf(spata_obj2)` to create a dataframe of all the genesets saved to our spata2 object and then filter that dataframe to select the ones we want. 
+
+For example, we can set our keyword to be "HM_" `c("HM_")` and filter our gene set df to select all geneset names that include that string. This will select all the msigdb Hallmarks gene signatures. Hallmarks is a good one to pull because we know there are 50 signatures in the collection so it is easy to check and make sure you're getting what you want. 
+
+**Important to note:** We're pulling these signatures from the spata object, so the names need to be the SPATA2 version of geneset names. They are not the same as the signature name you see in msigdb or in our geneset csv files.  
+```{r,getHallmarksSigs,message = FALSE}
+keyword <- c("HM_")
+geneset_dataframe <- getGeneSetDf(spata_obj2)
+geneset_names <- geneset_dataframe %>%
+  filter(str_detect(ont, paste(keyword, collapse = "|"))) %>%
+  pull(ont)
+geneset_names <- unique(geneset_names)
+```
+We can also pull a set of signatures we previously added ourselves. For example, here we pull the Neftel, Verhaak, Ravi, Pugh, DAEGs, and SpOT signatures. 
+```{r,getCellStatesSigs,message = FALSE}
+keywords_cellstates <- c("Neftel","Verhaak","Pugh","external_Ravi","external_SpOT.upreg","external_SpOT.downreg","external_Ron.upreg","external_Ron.downreg")
+
+geneset_names <- geneset_dataframe %>%
+  filter(str_detect(ont, paste(keywords_cellstates, collapse = "|"))) %>%
+  pull(ont)
+geneset_names <- unique(geneset_names)
+```
+# 2. Now we run the enrichment analysis across leiden clusters and save results to a dataframe and csv. 
+```{r,run SPATA2 GSEA,message = FALSE}
+#run GSEA
+spata_obj2 <-
+  runGSEA(
+    object = spata_obj2,
+    gene_set_names = geneset_names,
+    across = "leiden_gene",
+    methods_de = "wilcox",
+    reduce = FALSE
+  )
+```
+
+```{r,getGSEAdataframe,message = FALSE}
+#get GSEA results
+gseaDf <- getGseaDf(
+  object = spata_obj2, 
+  across = "leiden_gene",
+  method_de = "wilcox"
+)
+write.csv(gseaDf, paste(directory_10X,"\\",subdir,"\\cellstates_gseaDf.csv",sep=""),row.names = FALSE)
+```
+# 3. Generate a dotplot to visualize results:
+```{r echo = FALSE}
+#GSEA dot plot
+p3 <- plotGseaDotPlot(
+  object = spata_obj2,
+  across = "leiden_gene",
+  #across_subset = c("1", "2", "4", "5", "6"),
+  color_by = "pval",
+  #n_gsets = 5,
+  pt_alpha = 0.8,
+  #transform_with = list("fdr" = c("log10")),
+  by_group = FALSE, # merge in one plot
+  size_by = "fdr",
+  pt_clrsp = "Inferno" ,
+)
+p3
+ggplot2::ggsave('GSEAdotplot_cellstates.png')
+```
+# (Optional) Plot next to leiden cluster surface plot
+```{r, fig.align = "center",fig.height = 8, fig.width = 10, fig.show="hold"}
+p2 <- 
+  plotSurface(object = spata_obj2,
+              color_by = "leiden_gene",
+              pt_size = 2.2,
+              clrp_adjust = leiden_gene_colors,
+              display_image = TRUE) +
+  ggplot2::labs(color = "Clusters")
+
+# combine with patchwork 
+#grid.arrange(p2,p3, ncol = 2)
+p2 + legendRight() +
+  p3 + legendRight()
+ggplot2::ggsave('cluster_GSEAdotplot_cellstates.png')
+```
+# Heatmap
+```{r,cellstates_hm,fig.height = 6, fig.width = 6, fig.align = "center",echo = FALSE}
+# add -log10(pval) as a column in gseaDf
+gseaDf <- transform(gseaDf, log10pval = (-1*log10(pval)))
+row_names <- dplyr::pull(gseaDf, label)
+cellstates_hm <- ggplot(gseaDf, aes(leiden_gene, label, fill=log10pval)) + 
+  geom_tile(colour="gray20", linewidth=1.5, stat="identity") +
+  scale_fill_viridis_c(option="B",direction = 1,
+                       na.value = "grey50",guide = "colourbar") +
+  ggtitle("Cell States Enrichment (hypeR)")
+cellstates_hm
+ggplot2::ggsave('cellstates_hm_hypeR.png')
+
+```
+# Now we're done with the SPATA2 workflows
+Probably a good idea to save your spata_obj2 at this point. Differential expression analysis and gene set enrichment will be saved as part of that object. 
+```{r}
+#Adjust directory instructions for spata object 2
+spata_obj2 <-
+  adjustDirectoryInstructions(
+    object = spata_obj2,
+    to = "spata_object",
+    directory_new = spata_obj_dir2, # the directory under which to store the object
+  )
+
+saveSpataObject(object = spata_obj2)#Save SpataObj
+```
+## clusterProfiler enrichment
+Neftel and Ravi papers both use clusterProfiler enricher functions to evaluate enriched signatures in their cell state clusters. Here we're going to do the same thing for our clusters. 
+
+Set the organism that you're working with:
+```{r message = FALSE}
+# SET THE DESIRED ORGANISM HERE
+organism = "org.Hs.eg.db"
+#BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+```
+For each cluster, run differential expression analysis (SPATA2). Combine all those results in one dataframe (df_master). SPATA2 DE dataframe needs to be reformatted so that it is a list of character vectors for however many clusters you have. For example, we have 12 clusters for sample 50D, so we need to make a list of 12 character vectors. Each character vector is made up of that cluster's differentially expressed genes (maximum adj_pval = 0.025; limit from SPATA2 tutorial) expressed as **Entrez IDs. Not gene symbols.** 
+When converting symbols to entrezid, some don't match properly. So make sure to filter out all of the genes that couldn't be associated with a corresponding Entrez ID.
+```{r,message = FALSE}
+#DeaDf <- getDeaResultsDf(object = spata_obj2,across = "leiden_gene", method_de = "wilcox",max_adj_pval = 0.025)
+leidenclusters <- unique(DeaDf$leiden_gene)
+ids<-clusterProfiler::bitr(DeaDf$gene, fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+#dedup_ids = ids[!duplicated(ids[c("SYMBOL")]),]
+DeaDf <- DeaDf[DeaDf$gene %in% ids$SYMBOL,]
+map = setNames(c(ids$ENTREZID),c(ids$SYMBOL))
+DeaDf$Entrez_ID = map[DeaDf$gene]
+
+#convert to list of lists form
+geneList_master <- vector(mode = "list")
+for(cluster in leidenclusters){
+  geneList <- DeaDf %>%
+    filter(leiden_gene==cluster) %>% 
+    pull(Entrez_ID)
+  geneList_master[[cluster]] <- geneList
+}
+```
+Now we need to choose the genesets we want to query for gene set enrichment. 
+```{r, message = FALSE}
+#c2 and c5 from msigdb seem to be a common general pairing
+c5 <- msigdbr(species = "Homo sapiens", category = "C5") %>% 
+                   dplyr::select(gs_name, entrez_gene)
+c2 <- msigdbr(species = "Homo sapiens", category = "C2") %>% 
+  dplyr::select(gs_name, entrez_gene)
+c2c5 = rbind(c2, c5)
+
+#c7 is the immune msigdb collection. Too broad though. 
+c7 <- msigdbr(species = "Homo sapiens", category = "C7") %>% 
+  dplyr::select(gs_name, entrez_gene)
+
+# we can load our own signatures too. Just have to convert to ENTREZID
+external_genesets <- geneset_dataframe %>% 
+  filter(str_detect(ont, paste(keywords_cellstates, collapse = "|")))
+ids <- clusterProfiler::bitr(external_genesets$gene, fromType = "SYMBOL", toType = "ENTREZID", OrgDb=organism)
+external_genesets <- external_genesets[external_genesets$gene %in% ids$SYMBOL,]
+map = setNames(c(ids$ENTREZID),c(ids$SYMBOL))
+external_genesets$entrez_gene = map[external_genesets$gene]
+external_genesets <- external_genesets %>% dplyr::select(-gene)
+```
+# MSigDB C2 (curated genesets) and C5 (ontology gene sets) joint enrichment analysis
+- C5 includes gene ontology (GO:BP, GO:CC, GO:MF) and human phenotype ontology (HPO) sets
+- These are the combined collection of sets that Neftel et al. (2019) used to evaluate pathway enrichment for their cell states.
+Run enricher across all clusters. 
+- geneset collection: c2c5
+```{r,message = FALSE}
+ck <- compareCluster(geneCluster = geneList_master,
+                     fun = enricher,
+                     TERM2GENE=c2c5,
+                     minGSSize = 10,
+                     pAdjustMethod = "BH",
+                     pvalueCutoff = 0.05,
+                     qvalueCutoff = 0.2)
+ck <- setReadable(ck, OrgDb = "org.Hs.eg.db", keyType="ENTREZID")
+
+c2c5_df <- ck@compareClusterResult
+head(c2c5_df)
+write.csv(ck@compareClusterResult, paste(directory_10X,"\\",subdir,"\\C5C2_enricher.csv",sep=""),row.names = FALSE)
+```
+#Create a dotplot from the results of the enrichment. 
+Dotplot settings: 
+- font size 10, showing top 5 enriched sets per cluster
+- dots coloured by adjusted pvalue, sized by gene ratio
+-  'Gene count' is the number of genes enriched in a GO term. 'Gene ratio' is the percentage of total DEGs in the given GO term.
+```{r,dpc2c5, fig.height = 8, fig.width = 10, fig.align = "center"}
+dpc2c5 <- dotplot(ck, font.size = 10,showCategory = 5,label_format = 80)
+dpc2c5
+ggplot2::ggsave('C5C2_dotplot_enricher.png') 
+```
+# barplot
+```{r,bpc2c5, fig.align = "center",fig.show='hold',fig.keep='last'}
+for(cluster in leidenclusters){
+  ego <- enrichGO(gene = geneList_master[[cluster]],
+                  #universe = genelist_allgenes$ENTREZID,
+                  OrgDb = "org.Hs.eg.db",
+                  ont = "ALL",
+                  keyType = "ENTREZID",
+                  pAdjustMethod = "BH",
+                  pvalueCutoff  = 0.01,
+                  qvalueCutoff  = 0.05,
+                  readable = TRUE)
+  if(nrow(ego@result)>5){
+    # bar plot
+    mutate(ego, qscore = -log(p.adjust, base=10)) %>%
+      barplot(x="qscore", showCategory=20)
+    #ggplot2::ggsave('cnetplot_6.png')
+    ggplot2::ggsave(paste(subdir,'/','barplot_',cluster,'.png',sep=''))
+  }
+}
+
+```
+
+# Heatmap
+```{r,hmc2c5, fig.height = 8, fig.width = 10, fig.align = "center"}
+#add -log10(pval) 
+c2c5_df <- transform(c2c5_df, log10pval = (-1*log10(pvalue)))
+#to prep for plotting, take the top 10 genesets for each cluster
+c2c5_forhm=NULL
+for(cluster in leidenclusters){
+  clusterdf <- c2c5_df %>%
+    filter(Cluster==cluster)
+  clusterdf <- clusterdf[1:5, ]
+
+  c2c5_forhm = rbind(c2c5_forhm,clusterdf)
+}
+row_names <- unique(dplyr::pull(c2c5_forhm, ID))
+c2c5_forhm <- c2c5_df %>%
+  filter(ID %in% row_names)
+
+#cut down the genesets names for plotting
+c2c5_forhm <- as_tibble(c2c5_forhm)
+nameTooLong <- function(ID) {
+  case_when(
+    nchar(ID) > 40 ~ as.character(gsub("_"," ", str_trunc(ID, 40, "right"))),
+      .default = as.character(gsub("_"," ", ID))
+  )
+}
+c2c5_forhm <- c2c5_forhm %>%
+  mutate(ID = nameTooLong(ID))
+
+hmc2c5 <- ggplot(c2c5_forhm, aes(Cluster, ID, fill= log10pval)) + 
+  geom_tile(colour="gray20", linewidth=0.5, stat="identity") +
+  scale_fill_viridis_c(option="B",direction = 1,
+                       na.value = "white",guide = "colourbar") +
+  ggtitle("Enrichment - C2 and C5 Genesets")
+hmc2c5
+ggplot2::ggsave('C5C2_heatmap_enricher.png')
+```
+# MSigDB C7 (immuneSigDB)
+These are experimental immune sets. Need a more curated collection. 
+```{r,echo = FALSE}
+# ck <- compareCluster(geneCluster = geneList_master,
+#                      fun = enricher,
+#                      TERM2GENE=c7,
+#                      minGSSize = 10,
+#                      pAdjustMethod = "BH",
+#                      pvalueCutoff = 0.05,
+#                      qvalueCutoff = 0.2)
+# ck <- setReadable(ck, OrgDb = "org.Hs.eg.db", keyType="ENTREZID")
+```
+
+```{r, fig.height = 8, fig.width = 10, fig.align = "center",echo = FALSE}
+
+#write.csv(ck@compareClusterResult, paste(directory_10X,"\\",subdir,"\\C7_enricher.csv",sep=""),row.names = FALSE)
+# dpc7 <- dotplot(ck, font.size = 10,showCategory = 4,label_format = 80)
+# dpc7
+#ggplot2::ggsave('C7_dotplot_enricher.png')
+```
+# Our imported cell states/hypoxia signatures
+The same ones we got from our SPATA2 object. 
+```{r,fig.height = 6, fig.width = 8, fig.align = "center",echo = FALSE}
+ck <- compareCluster(geneCluster = geneList_master,
+                     fun = enricher,
+                     TERM2GENE=external_genesets,
+                     pAdjustMethod = "BH")
+ck <- setReadable(ck, OrgDb = "org.Hs.eg.db", keyType="ENTREZID")
+cellstates_df <- ck@compareClusterResult
+write.csv(ck@compareClusterResult, paste(directory_10X,"\\",subdir,"\\cellstates_enricher.csv",sep=""),row.names = FALSE)
+```
+# Dotplot
+```{r,fig.height = 7, fig.width = 7, fig.align = "center",echo = FALSE}
+
+dp_cellstates <- dotplot(ck, font.size = 10,showCategory = 5,label_format = 80)
+dp_cellstates
+ggplot2::ggsave('cellstates_dotplot_enricher.png')
+```
+# Heatmap
+```{r,enricher_cellstates_hm,fig.align = "center",echo = FALSE}
+#add -log10(pval) 
+cellstates_df <- transform(cellstates_df, log10pval = (-1*log10(pvalue)))
+#to prep for plotting, reformat dataframe
+cellstatesDf_pivot <- cellstates_df %>% dplyr::select(Cluster, ID, log10pval)
+cellstatesDf_pivot <- cellstatesDf_pivot %>% 
+  pivot_wider(names_from = Cluster,
+              values_from = log10pval)
+cellstatesDf_pivot <- cellstatesDf_pivot %>% 
+  pivot_longer(
+    cols = !ID, 
+    names_to = "Cluster", 
+    values_to = "log10pval"
+  )
+
+#cut down the genesets names for plotting
+cellstatesDf_pivot <- as_tibble(cellstatesDf_pivot)
+cellstatesDf_pivot <- cellstatesDf_pivot %>%
+  mutate(ID = nameTooLong(ID))
+
+hm <- ggplot(cellstatesDf_pivot, aes(Cluster, ID, fill= log10pval)) + 
+  geom_tile(colour="gray20", linewidth=0.5, stat="identity") +
+  scale_fill_viridis_c(option="B",direction = 1,
+                       na.value = "black",guide = "colourbar") +
+  ggtitle("Cell States Enrichment (clusterProfiler)")
+hm
+ggplot2::ggsave('cellstates_heatmap_enricher.png')
+```
