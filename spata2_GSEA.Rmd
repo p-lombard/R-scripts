@@ -8,10 +8,10 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__56_A1" #Need to reverse slashes when copied in Windows
-#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/50D" #Need to reverse slashes when copied in Windows
+directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/50D" #Need to reverse slashes when copied in Windows
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/16_1" #Need to reverse slashes when copied in Windows
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/45B"
-directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/47"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/47"
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/A1 - 15A"
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/B1(missing currently) - 19"
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/C1 - 33B"
@@ -42,10 +42,10 @@ library(msigdbr)
 library(clusterProfiler)
 
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/V21004-FF__56_A1" #Need to reverse slashes when copied in Windows
-#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/50D" #Need to reverse slashes when copied in Windows
+directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/50D" #Need to reverse slashes when copied in Windows
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/16_1" #Need to reverse slashes when copied in Windows
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/45B"
-directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/47"
+#directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/47"
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/A1 - 15A"
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/B1(missing currently) - 19"
 #directory_10X="C:/Users/mzaidi/Documents/Visium Datasets/Sheila_GBM/GBM_datasets/C1 - 33B"
@@ -111,30 +111,30 @@ SPATA2 has clustering and QC functions you can use as well but we want to make s
 4. Subset spata_obj using the spata function subsetByBarcodes() to create spata_obj2
 5. Add features using spata addFeatures() function to add "leiden_gene" (the leiden cluster assignments) as a feature of our spata object dataset.
 ```{r subset, message=FALSE}
-#load
-pythonObsClusters=paste(directory_10X,"/outs/obsClusters.csv",sep='')
-leiden_genedf=read.csv(pythonObsClusters)
-#Remove empty columns from external_geneset
-empty_columns <- colSums(is.na(leiden_genedf) | leiden_genedf == "") == nrow(leiden_genedf)
-leiden_genedf=leiden_genedf[, !empty_columns]
-
-# Rename barcodes column
-names(leiden_genedf)[names(leiden_genedf) == "X"] <- "barcodes"
-leiden_genedf$leiden_gene <- as.character(leiden_genedf$leiden_gene)
-
-#subset the spata object to include only spots included after scanpy preprocessing
-scanpy_barcodes <- leiden_genedf$barcodes
-spata_obj2 <- subsetByBarcodes_CountMtr(
-  spata_obj,
-  scanpy_barcodes
-)
-
-spata_obj2 <-
-  addFeatures(object = spata_obj2,
-              feature_names = c("leiden_gene"),
-              feature_df = leiden_genedf,
-              overwrite = TRUE,
-              key = "barcodes")
+# #load
+# pythonObsClusters=paste(directory_10X,"/outs/obsClusters.csv",sep='')
+# leiden_genedf=read.csv(pythonObsClusters)
+# #Remove empty columns from external_geneset
+# empty_columns <- colSums(is.na(leiden_genedf) | leiden_genedf == "") == nrow(leiden_genedf)
+# leiden_genedf=leiden_genedf[, !empty_columns]
+# 
+# # Rename barcodes column
+# names(leiden_genedf)[names(leiden_genedf) == "X"] <- "barcodes"
+# leiden_genedf$leiden_gene <- as.character(leiden_genedf$leiden_gene)
+# 
+# #subset the spata object to include only spots included after scanpy preprocessing
+# scanpy_barcodes <- leiden_genedf$barcodes
+# spata_obj2 <- subsetByBarcodes_CountMtr(
+#   spata_obj,
+#   scanpy_barcodes
+# )
+# 
+# spata_obj2 <-
+#   addFeatures(object = spata_obj2,
+#               feature_names = c("leiden_gene"),
+#               feature_df = leiden_genedf,
+#               overwrite = TRUE,
+#               key = "barcodes")
 ```
 ## or, if you've already made spata_obj2, you can just load it in
 ```{r loadSpata_obj2, message = FALSE}
@@ -350,12 +350,13 @@ ck <- compareCluster(geneCluster = geneList_master,
                      minGSSize = 10,
                      pAdjustMethod = "BH",
                      pvalueCutoff = 0.05,
-                     qvalueCutoff = 0.2)
+                     qvalueCutoff = 0.2
+                     )
 ck <- setReadable(ck, OrgDb = "org.Hs.eg.db", keyType="ENTREZID")
 
 c2c5_df <- ck@compareClusterResult
 head(c2c5_df)
-write.csv(ck@compareClusterResult, paste(directory_10X,"\\",subdir,"\\C5C2_enricher.csv",sep=""),row.names = FALSE)
+write.csv(ck@compareClusterResult, paste(directory_10X,"\\",subdir,"\\ C5C2_enricher.csv",sep=""),row.names = FALSE)
 ```
 #Create a dotplot from the results of the enrichment. 
 Dotplot settings: 
@@ -363,7 +364,7 @@ Dotplot settings:
 - dots coloured by adjusted pvalue, sized by gene ratio
 -  'Gene count' is the number of genes enriched in a GO term. 'Gene ratio' is the percentage of total DEGs in the given GO term.
 ```{r,dpc2c5, fig.height = 8, fig.width = 10, fig.align = "center"}
-dpc2c5 <- dotplot(ck, font.size = 10,showCategory = 5,label_format = 80)
+dpc2c5 <- dotplot(ck, font.size = 10,showCategory = 3,label_format = 80)
 dpc2c5
 ggplot2::ggsave('C5C2_dotplot_enricher.png') 
 ```
